@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+.output/
+coverage/
+pnpm-lock.yaml
+*.md
+# throwaway browser spike (see eslint.config.mjs)
+tools/spike-web/

@@ -1,0 +1,16 @@
+{
+  "name": "@signet/spike-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-off spike: prove @contentauth/c2pa-web reads the committed fixtures in a real browser. Driven by Playwright (run.mjs). Not shipped.",
+  "scripts": {
+    "spike": "node run.mjs"
+  },
+  "dependencies": {
+    "@contentauth/c2pa-web": "^0.13.4"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

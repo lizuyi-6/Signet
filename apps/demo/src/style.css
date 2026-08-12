@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+
+/*
+ * Demo site styles. Kept intentionally minimal — this page is a *host* for the
+ * committed fixtures; the extension overlays the actual trust badges. The
+ * per-card captions below are the demo's own ground-truth labels (what each
+ * fixture was built to demonstrate), NOT a verification result.
+ */
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: #f6f7f9;
+  color: #0f172a;
+}

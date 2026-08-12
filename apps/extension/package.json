@@ -1,0 +1,26 @@
+{
+  "name": "@signet/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Signet browser extension (MV3). Content script detects media; an offscreen document runs the c2pa-web WASM reader; the trust engine produces one of four states; a Shadow-DOM overlay renders the badge and detail card.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@signet/core": "workspace:*",
+    "@signet/trust-engine": "workspace:*",
+    "@signet/evidence-web": "workspace:*",
+    "@contentauth/c2pa-web": "0.13.4"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.7.1",
+    "@types/chrome": "^0.2.5",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0"
+  }
+}

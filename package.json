@@ -1,0 +1,38 @@
+{
+  "name": "signet",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Signet — AI-native Trusted Display Runtime. A browser extension that turns machine-readable content provenance (C2PA, signatures, hashes, AI labels) into a calm, human-trustworthy display layer.",
+  "type": "module",
+  "packageManager": "pnpm@10.30.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit && pnpm --filter @signet/demo typecheck && pnpm --filter @signet/extension typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "gen:fixtures": "tsx tools/gen-fixtures/src/index.ts",
+    "benchmark": "tsx tools/benchmark/src/cli.ts",
+    "dev": "pnpm --filter @signet/demo dev",
+    "build:demo": "pnpm --filter @signet/demo build",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.2",
+    "playwright": "^1.62.1",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  }
+}

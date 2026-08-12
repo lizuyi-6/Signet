@@ -1,0 +1,16 @@
+<!doctype html>
+<!--
+  Signet offscreen document host. Invisible (no UI); exists only so the
+  c2pa-web WASM reader can spawn its Web Worker — impossible inside an MV3
+  service worker. Created at runtime by the background SW via
+  chrome.offscreen.createDocument (see ../background/index.ts).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Signet offscreen verifier</title>
+  </head>
+  <body>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>

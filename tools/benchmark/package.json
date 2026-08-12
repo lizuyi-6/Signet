@@ -1,0 +1,28 @@
+{
+  "name": "@signet/benchmark",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Decision-engine benchmark: ≥100 synthetic manifest-store cases across the classification matrix, each checked against an INDEPENDENT specification oracle (not a call to decide). Acceptance criterion #7.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "benchmark": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@signet/core": "workspace:*",
+    "@signet/evidence": "workspace:*",
+    "@signet/trust-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

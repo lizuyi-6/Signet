@@ -1,0 +1,21 @@
+{
+  "name": "@signet/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Signet demo site — an 'Industry Intelligence Report' page hosting the four committed C2PA fixtures. This is the host page the extension badges; it deliberately does NOT verify content itself (the extension does that).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@signet/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.0"
+  }
+}

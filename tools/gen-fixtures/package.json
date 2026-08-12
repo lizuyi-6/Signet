@@ -1,0 +1,29 @@
+{
+  "name": "@signet/gen-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-time fixture generator: emits C2PA-signed/tampered PNGs and self-verifies each reads back to the intended trust state.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "gen": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@signet/core": "workspace:*",
+    "@signet/evidence": "workspace:*",
+    "@signet/trust-engine": "workspace:*",
+    "c2pa-node": "^0.5.26"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

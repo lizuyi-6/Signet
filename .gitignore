@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# test / coverage
+coverage/
+.vitest/
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# env
+.env
+.env.local
+.env.*.local
+
+# extension build artifacts (later phases)
+apps/extension/.output/
+apps/extension/dist/
+
+# temp extraction of the c2pa-node native binary (regenerated locally)
+tmp_extract/
