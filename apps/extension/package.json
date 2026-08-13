@@ -14,6 +14,7 @@
     "@signet/core": "workspace:*",
     "@signet/trust-engine": "workspace:*",
     "@signet/evidence-web": "workspace:*",
+    "@signet/intelligence": "workspace:*",
     "@contentauth/c2pa-web": "0.13.4"
   },
   "devDependencies": {

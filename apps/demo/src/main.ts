@@ -98,6 +98,11 @@ function render(): void {
       </p>
     </header>
     <section id="tc-grid" class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4"></section>
+    <div class="mt-8 flex gap-4">
+      <a class="inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white" href="/report.html">
+        View the Intelligence Report →
+      </a>
+    </div>
     <footer class="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
       Demo host only — this page performs no verification itself. Tampering a
       fixture flips Verified → Provenance Broken (demo priority #1).

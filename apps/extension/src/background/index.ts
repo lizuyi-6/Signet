@@ -11,7 +11,18 @@
  * finishes. (Returning a Promise is runtime-supported but not in the
  * @types/chrome signature.)
  */
-import type { VerifyForward, VerifyRequest, VerifyResult } from '../messages';
+import type {
+  AnalyzeRequest,
+  AnalyzeResult,
+  ExplainRequest,
+  ExplainResult,
+  VerifyForward,
+  VerifyRequest,
+  VerifyResult,
+} from '../messages';
+import { loadConfig } from '../intelligence-config';
+import { analyzePage, providerFor } from './intelligence';
+import { buildDeterministicExplanation, explainEvidenceWithFallback } from '@signet/intelligence';
 
 // The offscreen document's source path. crxjs serves it at this path in dev and
 // emits it at the same relative path under dist/ in build, so the SAME string
@@ -82,28 +93,105 @@ async function ensureOffscreen(): Promise<void> {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const m = msg as { to?: string; kind?: string };
-  if (!m || m.to !== 'background' || m.kind !== 'verify') {
+  if (!m || m.to !== 'background') {
     return false; // not addressed to us
   }
-  const req = msg as VerifyRequest;
-  void (async () => {
-    let res: VerifyResult;
-    try {
-      await ensureOffscreen();
-      const fwd: VerifyForward = {
-        kind: 'verify',
-        to: 'offscreen',
-        assetId: req.assetId,
-        url: req.url,
-      };
-      const got = (await chrome.runtime.sendMessage(fwd)) as VerifyResult | undefined;
-      res = got ?? fail(req.assetId, 'No response from the offscreen document.');
-    } catch (e) {
-      res = fail(req.assetId, (e as Error).message);
-    }
-    sendResponse(res);
-  })();
-  return true; // keep the channel open for the async sendResponse above
+
+  // --- Trust pipeline (unchanged since D16) ---------------------------------
+  if (m.kind === 'verify') {
+    const req = msg as VerifyRequest;
+    void (async () => {
+      let res: VerifyResult;
+      try {
+        await ensureOffscreen();
+        const fwd: VerifyForward = {
+          kind: 'verify',
+          to: 'offscreen',
+          assetId: req.assetId,
+          url: req.url,
+        };
+        const got = (await chrome.runtime.sendMessage(fwd)) as VerifyResult | undefined;
+        res = got ?? fail(req.assetId, 'No response from the offscreen document.');
+      } catch (e) {
+        res = fail(req.assetId, (e as Error).message);
+      }
+      sendResponse(res);
+    })();
+    return true; // keep the channel open for the async sendResponse above
+  }
+
+  // --- Intelligence channel (advisory; parallel to trust, never touches it) --
+  if (m.kind === 'analyze') {
+    const req = msg as AnalyzeRequest;
+    void (async () => {
+      let res: AnalyzeResult;
+      try {
+        const config = await loadConfig();
+        const outcome = await analyzePage(config, req.input);
+        res = {
+          kind: 'analyze-result',
+          to: 'content',
+          result: outcome.result,
+          status: outcome.status,
+          source: outcome.source,
+          promptVersion: outcome.promptVersion,
+          ...(outcome.error ? { error: outcome.error } : {}),
+        };
+      } catch (e) {
+        // The classifier is designed never to throw (§14), so this is a true
+        // last-resort guard: still advisory, still never touches trust.
+        res = {
+          kind: 'analyze-result',
+          to: 'content',
+          result: { assets: [], links: [] },
+          status: 'fallback',
+          source: 'heuristic',
+          promptVersion: 'semantic-v1',
+          error: (e as Error).message,
+        };
+      }
+      sendResponse(res);
+    })();
+    return true;
+  }
+
+  // --- Intelligence explanation channel (Phase H; display-only, on demand) ---
+  if (m.kind === 'explain') {
+    const req = msg as ExplainRequest;
+    void (async () => {
+      let res: ExplainResult;
+      try {
+        const config = await loadConfig();
+        const provider = providerFor(config);
+        const outcome = await explainEvidenceWithFallback(
+          req.input,
+          provider ?? undefined,
+          config.timeoutMs,
+        );
+        res = {
+          kind: 'explain-result',
+          to: 'content',
+          explanation: outcome.explanation,
+          source: outcome.source,
+          ...(outcome.error ? { error: outcome.error } : {}),
+        };
+      } catch (e) {
+        // The orchestrator never throws (§14), so this is a true last-resort
+        // guard: the deterministic floor is still produced, still display-only.
+        res = {
+          kind: 'explain-result',
+          to: 'content',
+          explanation: buildDeterministicExplanation(req.input),
+          source: 'deterministic',
+          error: (e as Error).message,
+        };
+      }
+      sendResponse(res);
+    })();
+    return true;
+  }
+
+  return false;
 });
 
 // Keep the SW log line out of production paths; useful while bootstrapping.

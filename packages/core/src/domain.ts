@@ -34,6 +34,12 @@ export interface BoundingBox {
  * The semantic role an asset plays on the page. Drives whether a trust badge
  * should be rendered at all — icons/avatars/decoration are suppressed by default
  * so the page does not become a wall of badges.
+ *
+ * The union is additive across phases: Phase 1–6 shipped the first ten roles;
+ * the Intelligence Layer (Phase 7) extends it with evidence-granularity and
+ * noise roles (`primary-evidence`, `supporting-evidence`, `data-visualization`,
+ * `news-photo`, `illustration`, `logo`). Existing roles are kept so the working
+ * scanner / suppression tests stay byte-stable. Nothing here is a trust signal.
  */
 export type SemanticRole =
   | 'hero-image'
@@ -45,6 +51,13 @@ export type SemanticRole =
   | 'decoration'
   | 'product-image'
   | 'screenshot'
+  // Intelligence Layer additions (Phase 7):
+  | 'primary-evidence'
+  | 'supporting-evidence'
+  | 'data-visualization'
+  | 'news-photo'
+  | 'illustration'
+  | 'logo'
   | 'unknown';
 
 /**

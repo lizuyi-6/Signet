@@ -11,6 +11,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: here,
   plugins: [tailwindcss()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        report: 'report.html',
+      },
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: Number(process.env.PORT) || 5173,

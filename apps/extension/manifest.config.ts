@@ -31,7 +31,20 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['offscreen'],
+  // The Intelligence Layer's config UI. Runs on the extension origin and talks
+  // only to chrome.storage.local — the API key never leaves this page except
+  // to the configured provider endpoint (via the background SW).
+  options_ui: {
+    page: 'src/options/index.html',
+    open_in_tab: true,
+  },
+  // - 'offscreen': hosts the c2pa-web WASM reader (D16).
+  // - 'storage': the Intelligence Layer config (enabled/provider/endpoint/model/
+  //   api key) lives in chrome.storage.local, written by the Options page and
+  //   read by the content script + SW. 'storage' is NOT a host permission — it
+  //   touches only extension-owned storage; it grants no page access and does
+  //   not relax any trust-decision gate.
+  permissions: ['offscreen', 'storage'],
   host_permissions: ['http://*/*', 'https://*/*'],
   // REQUIRED for @contentauth/c2pa-web: MV3 extension pages forbid WebAssembly
   // unless 'wasm-unsafe-eval' is in script-src. Without it, the offscreen doc

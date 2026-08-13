@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@signet/core": "workspace:*"
+    "@signet/core": "workspace:*",
+    "@signet/intelligence": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

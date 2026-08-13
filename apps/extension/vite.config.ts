@@ -28,7 +28,10 @@ export default defineConfig({
   build: {
     target: 'esnext',
     rollupOptions: {
-      input: { offscreen: 'src/offscreen/offscreen.html' },
+      input: {
+        offscreen: 'src/offscreen/offscreen.html',
+        options: 'src/options/index.html',
+      },
       output: { chunkFileNames: 'assets/chunk-[hash].js' },
     },
   },

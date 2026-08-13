@@ -13,6 +13,14 @@
  * promise-based runtime messaging delivers it.
  */
 import type { EvidenceItem, TrustReason, TrustState } from '@signet/core';
+import type {
+  AnalysisSource,
+  ClaimEvidenceResult,
+  ContextualExplanation,
+  IntelligenceStatus,
+  PageSemanticInput,
+  TrustExplanationInput,
+} from '@signet/intelligence';
 
 /** Which context a message is intended for. */
 export type Addressee = 'background' | 'offscreen' | 'content';
@@ -50,3 +58,61 @@ export interface VerifyResult {
 }
 
 export type InboundToBackground = VerifyForward | VerifyResult;
+
+// ---------------------------------------------------------------------------
+// Intelligence Layer — a SECOND, advisory channel that runs ALONGSIDE the trust
+// pipeline. It NEVER touches a VerifyRequest/VerifyResult. The content script
+// sends one AnalyzeRequest per page-scan (batch, §45); the background SW hosts
+// the HybridSemanticClassifier and returns the merged result. Trust bytes are
+// byte-identical whether or not this channel is used.
+// ---------------------------------------------------------------------------
+
+/**
+ * A page-level semantic analysis request. Carries ONLY text context
+ * (`PageSemanticInput` is alt/caption/headings/claims — no image bytes), per
+ * the §7 `context-only` privacy default.
+ */
+export interface AnalyzeRequest {
+  readonly kind: 'analyze';
+  readonly to: 'background';
+  readonly input: PageSemanticInput;
+}
+
+/**
+ * The advisory semantic result for the whole page. `status` tells the content
+ * script HOW to label the enrichment (disabled / ready / fallback); `result`
+ * holds the per-asset analyses + claim↔asset links. This is display-only
+ * context — it can never promote or demote a `VerifyResult.state`.
+ */
+export interface AnalyzeResult {
+  readonly kind: 'analyze-result';
+  readonly to: 'content';
+  readonly result: ClaimEvidenceResult;
+  readonly status: Exclude<IntelligenceStatus, 'pending' | 'error'>;
+  readonly source: AnalysisSource;
+  readonly promptVersion: string;
+  /** Present when `status === 'fallback'`, for honest UI labeling (§31). */
+  readonly error?: string;
+}
+
+/**
+ * A per-asset contextual-explanation request (Phase H), fired ON DEMAND when
+ * the user opens a detail card and AI is live. Carries only the already-decided
+ * verdict {state, reason} + advisory semantics — no evidence graph, no image
+ * bytes (§7). The SW runs {@link explainEvidenceWithFallback}: any failure
+ * yields the deterministic floor, so the card always has a sentence.
+ */
+export interface ExplainRequest {
+  readonly kind: 'explain';
+  readonly to: 'background';
+  readonly input: TrustExplanationInput;
+}
+
+export interface ExplainResult {
+  readonly kind: 'explain-result';
+  readonly to: 'content';
+  readonly explanation: ContextualExplanation;
+  readonly source: 'deterministic' | 'ai';
+  /** Present when AI was attempted but fell back (honest labeling). */
+  readonly error?: string;
+}

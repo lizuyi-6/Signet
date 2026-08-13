@@ -11,7 +11,14 @@
  * are inserted via `textContent` / attribute setters, never via `innerHTML`
  * interpolation — provenance is untrusted input.
  */
-import { TRUST_STATE_META, type EvidenceItem } from '@signet/core';
+import { TRUST_STATE_META, type EvidenceItem, type SemanticRole } from '@signet/core';
+import type {
+  AnalysisSource,
+  AssetSemanticAnalysis,
+  ClaimEvidenceLink,
+  ContextualExplanation,
+  PageClaim,
+} from '@signet/intelligence';
 
 import type { VerifyResult } from '../messages';
 
@@ -53,6 +60,59 @@ function statusGlyph(status: EvidenceItem['status']): string {
   }
 }
 
+/**
+ * Short human label for a semantic role. The Intelligence Layer is advisory, so
+ * these labels describe the asset's *role on the page*, not its trust state.
+ */
+const ROLE_LABEL: Readonly<Record<SemanticRole, string>> = {
+  'hero-image': 'Hero image',
+  'primary-evidence': 'Primary evidence',
+  'supporting-evidence': 'Supporting evidence',
+  'data-visualization': 'Data visualization',
+  chart: 'Chart',
+  'news-photo': 'News photo',
+  'article-evidence': 'Article evidence',
+  screenshot: 'Screenshot',
+  'product-image': 'Product image',
+  illustration: 'Illustration',
+  logo: 'Logo',
+  icon: 'Icon',
+  avatar: 'Avatar',
+  decoration: 'Decorative',
+  advertisement: 'Advertisement',
+  unknown: 'Image',
+};
+
+/** How the semantic analysis was produced — for honest "AI-assisted" labeling (§31). */
+const SOURCE_LABEL: Readonly<Record<AnalysisSource, string>> = {
+  heuristic: 'Heuristic',
+  ai: 'AI',
+  hybrid: 'AI-assisted',
+};
+
+/** Short label per claim↔asset relation, for the Related-claims list. */
+const RELATION_LABEL: Readonly<Record<ClaimEvidenceLink['relation'], string>> = {
+  illustrates: 'Illustrates the claim',
+  supports: 'Supports the claim',
+  contradicts: 'Runs against the claim',
+  unrelated: 'Not clearly related to the claim',
+};
+
+/**
+ * The full advisory semantic picture for one asset: the analysis (role +
+ * scores), how it was produced, the claim↔asset links touching it, the claim
+ * texts they reference, and the display-only contextual explanation. All of it
+ * sits in the CONTEXT block — visually and structurally separate from the
+ * cryptographic verdict above it.
+ */
+export interface SemanticPicture {
+  readonly analysis: AssetSemanticAnalysis;
+  readonly source: AnalysisSource;
+  readonly links: readonly ClaimEvidenceLink[];
+  readonly claims: ReadonlyMap<string, PageClaim>;
+  readonly explanation: ContextualExplanation;
+}
+
 function buildBadge(result: VerifyResult): HTMLElement {
   const meta = TRUST_STATE_META[result.state];
   const color = TONE_COLOR[meta.tone];
@@ -73,7 +133,7 @@ function buildBadge(result: VerifyResult): HTMLElement {
   return badge;
 }
 
-function buildDetail(result: VerifyResult): HTMLElement {
+function buildDetail(result: VerifyResult, semantics?: SemanticPicture): HTMLElement {
   const meta = TRUST_STATE_META[result.state];
   const color = TONE_COLOR[meta.tone];
   const card = document.createElement('div');
@@ -91,17 +151,92 @@ function buildDetail(result: VerifyResult): HTMLElement {
   htitle.textContent = meta.label;
   head.append(hsym, htitle);
 
+  // VERIFICATION — the cryptographic verdict, always rendered from the engine's
+  // decision. The section title makes the split explicit (§31): everything
+  // below the CONTEXT fence is advisory; everything above is the verdict.
+  const vTitle = document.createElement('p');
+  vTitle.className = 'tc-list-title';
+  vTitle.textContent = 'Verification · cryptographic';
+
   const why = document.createElement('p');
   why.className = 'tc-why';
   why.textContent = REASON_SENTENCE[result.reason] ?? '';
+
+  card.append(head, vTitle, why);
 
   if (result.errorMessage) {
     const err = document.createElement('p');
     err.className = 'tc-err';
     err.textContent = `Collector error: ${result.errorMessage}`;
-    card.append(head, why, err);
-  } else {
-    card.append(head, why);
+    card.append(err);
+  }
+
+  // CONTEXT section — advisory semantics from the Intelligence Layer. Rendered
+  // as a DISTINCT block from the cryptographic verdict above, so a reader can
+  // always tell "what was proven" (VERIFICATION) apart from "what the page is
+  // using this image for" (CONTEXT). Never overrides or restates trust.
+  if (semantics) {
+    const ctx = document.createElement('div');
+    ctx.className = 'tc-context';
+    const ctxTitle = document.createElement('p');
+    ctxTitle.className = 'tc-list-title';
+    ctxTitle.textContent = `Context · ${SOURCE_LABEL[semantics.source]}`;
+    const role = document.createElement('p');
+    role.className = 'tc-context-role';
+    role.textContent = ROLE_LABEL[semantics.analysis.role] ?? 'Image';
+    const src = document.createElement('p');
+    src.className = 'tc-context-source';
+    src.textContent = `confidence ${Math.round(semantics.analysis.confidence * 100)}%`;
+    const rsn = document.createElement('p');
+    rsn.className = 'tc-context-reason';
+    rsn.textContent = semantics.analysis.reason;
+    ctx.append(ctxTitle, role, src, rsn);
+
+    // Related claims — the claim↔asset links touching this asset (≤3 by
+    // construction, Phase F). Claim texts come from the claim table the
+    // content script selected; a link whose claimId is unknown is SKIPPED
+    // (fail-closed: never render an id we cannot explain).
+    const knownLinks = semantics.links.filter((l) => semantics.claims.has(l.claimId));
+    if (knownLinks.length > 0) {
+      const relTitle = document.createElement('p');
+      relTitle.className = 'tc-list-title';
+      relTitle.textContent = 'Related claims';
+      const relList = document.createElement('ul');
+      relList.className = 'tc-context-claims';
+      for (const l of knownLinks) {
+        const li = document.createElement('li');
+        const rel = document.createElement('span');
+        rel.className = 'tc-context-claim-rel';
+        rel.textContent = RELATION_LABEL[l.relation];
+        const txt = document.createElement('span');
+        txt.className = 'tc-context-claim-text';
+        txt.textContent = semantics.claims.get(l.claimId)?.text ?? '';
+        li.append(rel, txt);
+        relList.append(li);
+      }
+      ctx.append(relTitle, relList);
+    }
+
+    // Why this matters — the display-only contextual explanation (deterministic
+    // floor or AI-enriched). The caveats list what the reader must NOT conclude.
+    const exp = semantics.explanation;
+    if (exp.text) {
+      const expTitle = document.createElement('p');
+      expTitle.className = 'tc-list-title';
+      expTitle.textContent = 'Why this matters';
+      const expText = document.createElement('p');
+      expText.className = 'tc-context-explain';
+      expText.textContent = exp.text;
+      ctx.append(expTitle, expText);
+      for (const c of exp.caveats) {
+        const cv = document.createElement('p');
+        cv.className = 'tc-context-caveat';
+        cv.textContent = `⚠ ${c}`;
+        ctx.append(cv);
+      }
+    }
+
+    card.append(ctx);
   }
 
   if (result.items.length > 0) {
@@ -192,8 +327,20 @@ export class TrustOverlay {
   private detail: HTMLElement | null = null;
   private open = false;
   private lastResult: VerifyResult | null = null;
+  private semantics: SemanticPicture | null = null;
+  private roleChip: HTMLElement | null = null;
 
-  constructor(private readonly img: HTMLImageElement) {
+  /**
+   * @param img        the image this overlay anchors to.
+   * @param onDetailOpen optional hook fired when the detail card OPENS — the
+   *   orchestrator uses it to fire the on-demand AI explanation request
+   *   (Phase H). Purely additive; the card renders the deterministic floor
+   *   immediately and is refreshed when the AI answer lands.
+   */
+  constructor(
+    private readonly img: HTMLImageElement,
+    private readonly onDetailOpen?: () => void,
+  ) {
     this.host = document.createElement('div');
     this.host.className = 'tc-host';
     this.shadow = this.host.attachShadow({ mode: 'open' });
@@ -228,13 +375,62 @@ export class TrustOverlay {
     });
     this.badge.replaceWith(fresh);
     this.badge = fresh;
+    this.roleChip = null; // rebuilt by applyRoleChip on the fresh badge
+    this.applyRoleChip();
     // If the detail card was open, refresh it too.
     if (this.open && this.detail) {
-      const freshDetail = buildDetail(result);
+      const freshDetail = buildDetail(result, this.semantics ?? undefined);
       this.detail.replaceWith(freshDetail);
       this.detail = freshDetail;
     }
     this.reposition();
+  }
+
+  /**
+   * Attach the advisory semantic picture (role + source + links + claims +
+   * explanation) as a small chip on the badge and the CONTEXT block in the
+   * detail card. This is ADDITIVE: it never changes the trust glyph, colour,
+   * label, or reason. Call with the heuristic picture for an immediate first
+   * paint, then again with the refined picture (links + explanation) when the
+   * analyze result lands or the AI explanation arrives.
+   */
+  setSemantics(picture: SemanticPicture): void {
+    this.semantics = picture;
+    this.applyRoleChip();
+    if (this.open && this.detail) {
+      const freshDetail = buildDetail(this.lastResult ?? this.placeholderResult(), this.semantics);
+      this.detail.replaceWith(freshDetail);
+      this.detail = freshDetail;
+    }
+  }
+
+  /** The minimal VerifyResult used only when the detail card is opened before
+   * any trust result has landed (semantics can arrive before trust does). */
+  private placeholderResult(): VerifyResult {
+    return {
+      kind: 'verify-result',
+      assetId: '',
+      state: 'unknown',
+      reason: 'no-evidence',
+      failClosed: true,
+      items: [],
+    };
+  }
+
+  /** Add or refresh the role chip on the current badge (no-op if no semantics). */
+  private applyRoleChip(): void {
+    if (!this.semantics) return;
+    const { analysis, source } = this.semantics;
+    if (!this.roleChip || !this.badge.contains(this.roleChip)) {
+      const chip = document.createElement('span');
+      chip.className = 'tc-role';
+      chip.setAttribute('aria-label', `Context: ${ROLE_LABEL[analysis.role]}`);
+      this.badge.append(chip);
+      this.roleChip = chip;
+    }
+    this.roleChip.textContent = ROLE_LABEL[analysis.role] ?? 'Image';
+    this.roleChip.dataset.source = source;
+    this.roleChip.title = `${SOURCE_LABEL[source]} context · confidence ${Math.round(analysis.confidence * 100)}%`;
   }
 
   /** Recompute the host position from the image's current rect. */
@@ -257,16 +453,20 @@ export class TrustOverlay {
   }
 
   private toggle(): void {
-    if (!this.lastResult) return;
+    if (!this.lastResult && !this.semantics) return;
     if (this.open) {
       this.detail?.remove();
       this.detail = null;
       this.open = false;
       return;
     }
-    this.detail = buildDetail(this.lastResult);
+    this.detail = buildDetail(
+      this.lastResult ?? this.placeholderResult(),
+      this.semantics ?? undefined,
+    );
     this.shadow.append(this.detail);
     this.open = true;
+    this.onDetailOpen?.();
     this.reposition();
   }
 
@@ -307,6 +507,23 @@ const SHADOW_CSS = `
   .tc-badge .tc-sym { font-size: 13px; line-height: 1; }
   .tc-badge.tc-pending { opacity: 0.55; animation: tc-pulse 1.2s ease-in-out infinite; }
   @keyframes tc-pulse { 0%,100%{opacity:.35} 50%{opacity:.75} }
+  /* Role chip: advisory context on the badge. Muted so it never competes with
+     the trust glyph; prefixed with a separator so it reads as a second clause. */
+  .tc-badge .tc-role {
+    font-size: 11px;
+    font-weight: 500;
+    color: #64748b;
+    padding-left: 5px;
+    margin-left: 1px;
+    border-left: 1px solid rgba(15,23,42,0.12);
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tc-badge[data-source="ai"] .tc-role,
+  .tc-badge .tc-role[data-source="hybrid"] { color: #7c3aed; }
+  .tc-badge:hover .tc-role, .tc-badge:focus-visible .tc-role { display: inline; }
 
   .tc-detail {
     pointer-events: auto;
@@ -339,6 +556,23 @@ const SHADOW_CSS = `
   .tc-item-valid { color: #16a34a; } .tc-item-invalid { color: #dc2626; } .tc-item-unknown { color: #94a3b8; }
   .tc-item-kind { color: #475569; font-weight: 600; }
   .tc-item-note { display:block; color: #64748b; font-size: 11.5px; word-break: break-word; }
+  /* CONTEXT block: advisory semantics, visually fenced off from the verdict so
+     "what's proven" and "what the image is doing here" never blur together. */
+  .tc-context {
+    margin: 6px 0 8px;
+    padding: 8px 10px;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 8px;
+  }
+  .tc-context-role { margin: 0 0 2px; font-weight: 600; color: #4c1d95; font-size: 12.5px; }
+  .tc-context-source { margin: 0 0 4px; font-size: 11px; color: #7c3aed; }
+  .tc-context-reason { margin: 0; font-size: 11.5px; color: #475569; word-break: break-word; }
+  .tc-context-claims { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .tc-context-claim-rel { display: block; font-size: 10.5px; font-weight: 600; color: #7c3aed; }
+  .tc-context-claim-text { display: block; font-size: 11.5px; color: #334155; word-break: break-word; }
+  .tc-context-explain { margin: 0; font-size: 11.5px; color: #334155; word-break: break-word; }
+  .tc-context-caveat { margin: 4px 0 0; font-size: 10.5px; color: #92400e; word-break: break-word; }
   .tc-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; position: relative; display: flex; flex-direction: column; gap: 3px; }
   .tc-timeline::before { content:''; position:absolute; left:4px; top:4px; bottom:4px; width:2px; background:#e2e8f0; border-radius:2px; }
   .tc-tl-step { position: relative; padding-left: 2px; }
