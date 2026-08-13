@@ -48,6 +48,9 @@ Evidence Graph               per-asset nodes + edges
 Trust Reasoner               deterministic rule engine → TrustDecision
         │                       + template/LLM human-readable explanation
         ▼
+Final Display Policy         decideFinalDisplay: `broken` always shows at `critical`;
+        │                       otherwise the advisory semantic decision governs
+        ▼
 Display Runtime              badge, detail card, timeline, technical view
 ```
 
@@ -61,10 +64,12 @@ Display Runtime              badge, detail card, timeline, technical view
 | C2PA / signature / hash collection (Node) | `@signet/evidence` | **Implemented + tested (20 tests).** Read-only native reader + pure mapper. |
 | C2PA collection (browser) | `@signet/evidence-web` | **Implemented + tested (8 tests).** Pure `normalizeWebManifestStore` + thin browser-only reader reusing the same mapper. Proven by real-browser spike (D15, 7/7). |
 | Build-time signed fixtures | `@signet/gen-fixtures` | **Implemented.** Self-verifying sign→read→tamper→read generator; 4 helper tests. |
-| Asset discovery / DOM scanner | — *(planned `@signet/screen-intelligence`, `apps/extension`)* | Not started (Phase 3). |
-| Display runtime (badge/card/timeline) | — *(planned `@signet/ui`)* | Not started (Phase 3). |
-| Demo site | — *(planned `apps/demo`)* | Fixtures exist (Phase 2); UI not started (Phase 4). |
-| AI reasoner / VLM adapter | — *(planned `@signet/ai`)* | Not started (Phase 5). |
+| Asset discovery / DOM scanner | `apps/extension` (`content/scan.ts`) | **Implemented.** `scanImages()` + `scanImagesWithSemantics()`; icons/avatars suppressed. |
+| Screen Intelligence (advisory) | `@signet/intelligence` | **Implemented.** Heuristic classifier + optional AI provider + claim↔asset mapping + explanation. Never touches trust (§51). |
+| Final Display Policy | `@signet/intelligence` (`display.ts`) | **Implemented.** `decideFinalDisplay` — `broken` always shows at `critical`; otherwise semantic decision governs (§17). |
+| Display runtime (badge/card/timeline) | `apps/extension` (`content/badge.ts`) | **Implemented.** Shadow-DOM badge + detail card + provenance timeline. |
+| Demo site | `apps/demo` | **Implemented.** 4 committed fixtures + Intelligence Report page. |
+| AI provider / reasoner | `@signet/intelligence` (provider + classifier) | **Implemented (optional).** OpenAI-compatible + mock; heuristic floor always runs first; no key in source. |
 
 ## Trust model (the part that ships in Phase 1)
 
@@ -108,11 +113,31 @@ this system exists to prevent.
 These are not just rules the engine checks — they are structural properties of
 how facts are derived, which makes them auditable at a single point.
 
+### Trust Visibility Invariant (§17) — the last gate before display
+
+The advisory Intelligence Layer may *suppress* a badge for noise reasons (logo,
+decoration, low importance), but it can **never** hide a cryptographically
+detected failure. The `Final Display Policy` (`decideFinalDisplay`) is the single
+mount/suppress authority, and it is fail-closed toward **visibility of failure**:
+
+> No semantic or AI-derived signal may suppress a cryptographically detected
+> provenance failure.
+
+Concretely, `decideFinalDisplay(trust, semantic)` returns `show: true, priority:
+'critical'` whenever `trust.state === 'broken'`, regardless of the semantic
+`BadgeDecision`; for every other state it defers to semantics. It reads only
+`trust.state` (a `TrustView`), so it cannot promote or demote a verdict — it only
+decides visibility. Verification itself is independent of this gate: the content
+script verifies every eligible asset unconditionally, so a `broken` result can
+always surface. This is the display-side half of the AI-powerlessness contract:
+§51 proves AI cannot *change* the verdict (`ai-powerlessness.test.ts`); §17
+proves AI cannot *hide* it (`display.test.ts`).
+
 ## Working with this repo
 
 ```bash
 pnpm install
-pnpm test          # 62 tests (core + trust-engine + evidence + evidence-web + gen-fixtures)
+pnpm test          # 278 tests (core + trust-engine + evidence + evidence-web + intelligence + fixtures + benchmark)
 pnpm typecheck     # tsc --noEmit across the workspace
 pnpm lint          # ESLint (flat config, typescript-eslint)
 pnpm format:check  # Prettier

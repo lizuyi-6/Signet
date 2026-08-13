@@ -10,8 +10,8 @@
  * view without a second dependency hop.
  */
 export { normalizeWebManifestStore } from './normalize.js';
-export { readC2paEvidenceWeb } from './reader.js';
-export type { WebReaderOptions } from './reader.js';
+export { readC2paEvidenceWeb, resolveTrustProfile } from './reader.js';
+export type { WebReaderOptions, TrustProfile, TrustProfileOptions } from './reader.js';
 export { mapManifestStore } from '@signet/evidence';
 export type {
   C2PAManifestStoreView,

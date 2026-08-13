@@ -13,12 +13,21 @@
  * build would ship real C2PA trust anchors or use the SDK default list.
  */
 import { decide } from '@signet/trust-engine';
-import { readC2paEvidenceWeb } from '@signet/evidence-web';
+import { readC2paEvidenceWeb, resolveTrustProfile } from '@signet/evidence-web';
 
 import wasmSrc from '@contentauth/c2pa-web/resources/c2pa.wasm?url';
 import anchorPem from './trust-anchor.pem?raw';
 
 import type { VerifyForward, VerifyResult } from '../messages';
+
+// Resolve the DEMO trust profile once at module load. This is the demo build's
+// trust configuration (c2pa-node's TEST signer anchor so committed fixtures
+// verify as Trusted). A real build switches to `profile: 'default'` (the SDK's
+// built-in trust list). Both keep `verifyTrust: true` — the demo ADDs an anchor
+// (the sanctioned mechanism, rule 3.3); it never weakens the gate. Resolving at
+// load means a missing demo anchor is a loud build-time failure, not a quiet
+// runtime "untrusted".
+const trust = resolveTrustProfile({ profile: 'demo', demoAnchorPem: anchorPem });
 
 function fail(assetId: string, errorMessage: string): VerifyResult {
   return {
@@ -55,8 +64,8 @@ async function handleVerify(fwd: VerifyForward): Promise<VerifyResult> {
   const mime = blob.type || guessMime(url);
   const graph = await readC2paEvidenceWeb(blob, mime, assetId, {
     wasmSrc,
-    trustAnchorPem: anchorPem,
-    verifyTrust: true,
+    ...(trust.trustAnchorPem ? { trustAnchorPem: trust.trustAnchorPem } : {}),
+    verifyTrust: trust.verifyTrust,
   });
   const decision = decide(graph);
   return {

@@ -16,10 +16,14 @@
  *     code runs; no `analyze` message is sent.
  *   - **Intelligence (intelligence ON):** runs {@link processIntelligence} —
  *     scans ALL qualifying images with DOM context, applies the heuristic
- *     classifier LOCALLY for immediate suppression + enrichment (no flash),
- *     then sends ONE batched `analyze` request; the hybrid result refines the
- *     enrichment. The trust pipeline (verify → badge) is the SAME verify
- *     message either way — semantics never gate or alter trust.
+ *     classifier LOCALLY for immediate enrichment (no flash), verifies EVERY
+ *     eligible asset (independent of semantic suppression), and defers the
+ *     mount/suppress decision to the final display policy
+ *     ({@link reconcileDisplay} → {@link decideFinalDisplay}), which can never
+ *     hide a `broken` verdict (§17). Then it sends ONE batched `analyze`
+ *     request; the hybrid result refines the enrichment. The trust pipeline
+ *     (verify → badge) is the SAME verify message either way — semantics
+ *     never gate or alter trust.
  *
  * This module never touches C2PA / WASM directly — that lives in the offscreen
  * document (D16). It only renders trust states the engine has already decided.
@@ -36,7 +40,9 @@ import { loadConfig, onConfigChange } from '../intelligence-config';
 import {
   badgePolicy,
   buildDeterministicExplanation,
+  cacheKeyFor,
   classifyHeuristicBatch,
+  decideFinalDisplay,
   selectTopClaims,
   type AnalysisSource,
   type AssetSemanticAnalysis,
@@ -76,7 +82,6 @@ let analyzeInflight = false;
 let analyzeDirty = false;
 let lastSentFingerprint = '';
 let pendingSemantics: readonly AssetSemanticInput[] = [];
-let pendingFingerprint = '';
 
 // --- Per-url advisory state (Phase H) ----------------------------------------
 /** The last trust result per url, for building the explanation input. */
@@ -114,8 +119,17 @@ async function verify(url: string): Promise<void> {
     if (res && res.kind === 'verify-result' && res.assetId === url) {
       verified.add(url);
       verifyResults.set(url, res);
-      overlays.get(url)?.setResult(res);
-      refreshPicture(url); // explanation now narrates the REAL verdict
+      if (analysesByUrl.has(url)) {
+        // Intelligence mode: the FINAL display policy reconciles the verdict
+        // with the semantic decision — a broken verdict mounts its badge even
+        // if semantics had suppressed the asset (§17 Trust Visibility
+        // Invariant).
+        reconcileDisplay(url);
+      } else {
+        // Legacy mode (intelligence OFF): no semantic entry, render directly.
+        overlays.get(url)?.setResult(res);
+        refreshPicture(url); // explanation now narrates the REAL verdict
+      }
     }
   } catch {
     // The SW may be asleep or the channel closed. Leave the pending badge in
@@ -234,6 +248,31 @@ function removeOverlay(url: string): void {
   verified.delete(url);
 }
 
+/**
+ * Recompute the FINAL display decision for one asset from current state and
+ * apply it. This is the "Final Display Policy" stage of the pipeline (§13):
+ * it combines the trust verdict (when known) with the semantic badge decision,
+ * so a `broken` verdict can never be hidden by a later semantic "suppress"
+ * (§17 — the Trust Visibility Invariant). Verification itself is triggered
+ * separately and unconditionally; this function only mounts/removes the badge.
+ */
+function reconcileDisplay(url: string): void {
+  const entry = lastScannedAssets.get(url);
+  const analysis = analysesByUrl.get(url)?.analysis;
+  if (!entry || !analysis) return;
+  const trust = verifyResults.get(url);
+  const decision = decideFinalDisplay(trust, badgePolicy.shouldShow(entry.asset, analysis));
+  if (decision.show) {
+    const ov = ensureOverlay(url);
+    if (ov) {
+      if (trust) ov.setResult(trust);
+      refreshPicture(url);
+    }
+  } else {
+    removeOverlay(url);
+  }
+}
+
 function pruneGoneOverlays(): void {
   // Iterate a snapshot — removeOverlay mutates the map.
   for (const url of [...overlays.keys()]) {
@@ -269,19 +308,13 @@ function processIntelligence(): void {
     semanticsForBatch.push(item.semantic);
     const analysis = heuristicById.get(item.asset.id);
     if (!analysis) continue;
-    const decision = badgePolicy.shouldShow(item.asset, analysis);
-    if (!decision.show) {
-      // Suppressed by policy (logo / decoration / low-importance): drop any
-      // overlay a prior scan may have mounted.
-      removeOverlay(url);
-      continue;
-    }
     analysesByUrl.set(url, { analysis, source: 'heuristic' });
-    const ov = ensureOverlay(url);
-    if (ov) {
-      refreshPicture(url); // heuristic floor: role chip + deterministic sentence
-      void verify(url); // trust pipeline — unchanged
-    }
+    // Verification is INDEPENDENT of semantic visibility (§11/§12): every
+    // eligible asset is verified — even a logo/decoration the badge policy
+    // would suppress — so a cryptographic failure can always surface. The
+    // FINAL display decision (mount vs suppress) is reconcileDisplay's job.
+    void verify(url);
+    reconcileDisplay(url);
   }
   pruneGoneOverlays();
 
@@ -299,38 +332,21 @@ function scheduleProcess(): void {
 }
 
 // --- Batched analyze request (one provider call per settled page state) -------
-function fingerprint(semantics: readonly AssetSemanticInput[]): string {
-  // Coarse: the asset URL set + count. Good enough to collapse a burst of DOM
-  // mutations into one provider call when the page's image set is stable. The
-  // SW cache additionally dedups by full text content.
-  const ids = semantics
-    .map((s) => s.assetId)
-    .slice()
-    .sort()
-    .join('|');
-  return `${ids}#${semantics.length}`;
-}
-
 function scheduleAnalyze(semantics: readonly AssetSemanticInput[]): void {
   // Debounce: a burst of mutations collapses into one call 300ms after the last.
   if (analyzeTimer !== null) clearTimeout(analyzeTimer);
   pendingSemantics = semantics;
-  pendingFingerprint = fingerprint(semantics);
   analyzeTimer = window.setTimeout(() => void flushAnalyze(), 300);
 }
 
 async function flushAnalyze(): Promise<void> {
   analyzeTimer = null;
-  if (pendingFingerprint === lastSentFingerprint) return;
-  if (analyzeInflight) {
-    // A provider call is in flight; re-send once it lands if the page changed.
-    analyzeDirty = true;
-    return;
-  }
-  lastSentFingerprint = pendingFingerprint;
-  analyzeInflight = true;
+  // Build the FULL page-semantic input first: the dedup fingerprint must cover
+  // every field the classifier keys on — pageUrl, pageTitle, headings, claims,
+  // and each asset's altText/nearbyText — not just the asset URL set (§ J4).
+  // Otherwise an SPA content change that leaves the image set unchanged would
+  // be silently skipped and the AI layer would keep serving a stale analysis.
   const claims: PageClaim[] = selectTopClaims(collectClaimCandidates());
-  claimsById = new Map(claims.map((c) => [c.id, c])); // for rendering linked claims
   const input: PageSemanticInput = {
     pageUrl: location.href,
     pageTitle: document.title || undefined,
@@ -339,6 +355,16 @@ async function flushAnalyze(): Promise<void> {
     assets: pendingSemantics,
     privacyMode: 'context-only', // content script never sends image bytes (§7)
   };
+  const fp = cacheKeyFor(input);
+  if (fp === lastSentFingerprint) return;
+  if (analyzeInflight) {
+    // A provider call is in flight; re-send once it lands if the page changed.
+    analyzeDirty = true;
+    return;
+  }
+  lastSentFingerprint = fp;
+  claimsById = new Map(claims.map((c) => [c.id, c])); // for rendering linked claims
+  analyzeInflight = true;
   try {
     const req: AnalyzeRequest = { kind: 'analyze', to: 'background', input };
     const res = (await chrome.runtime.sendMessage(req)) as AnalyzeResult | undefined;
@@ -366,19 +392,16 @@ function applyAnalyzeResult(result: ClaimEvidenceResult, status: AnalyzeResult['
     else links.set(l.assetId, [l]);
   }
   linksByUrl = links;
-  for (const [url, { asset }] of lastScannedAssets) {
+  for (const [url] of lastScannedAssets) {
     const analysis = byId.get(url);
     if (!analysis) continue; // AI omitted this asset → heuristic enrichment stays.
-    const decision = badgePolicy.shouldShow(asset, analysis);
-    if (!decision.show) {
-      removeOverlay(url); // AI refined the role → now suppressed.
-      continue;
-    }
     analysesByUrl.set(url, {
       analysis,
       source: analysis.generatedBy === 'ai' ? 'ai' : analysis.generatedBy,
     });
-    refreshPicture(url); // refined role + links + deterministic sentence
+    // Reconcile: AI may refine the role to a suppressed one, but a `broken`
+    // verdict still overrides suppression (§17). No semantic signal hides it.
+    reconcileDisplay(url);
   }
 }
 

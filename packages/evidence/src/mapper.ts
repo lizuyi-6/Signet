@@ -39,10 +39,53 @@ import type {
 } from './c2pa-types.js';
 
 /** AI-trained digital source types per the C2PA spec → count as AI-declared. */
-const AI_SOURCE_TYPES: ReadonlySet<string> = new Set([
-  'trainedAlgorithmicMedia',
-  'compositeWithTrainedAlgorithmicMedia',
-]);
+const AI_SOURCE_TYPE_TERMS: readonly string[] = [
+  'trainedalgorithmicmedia',
+  'compositewithtrainedalgorithmicmedia',
+];
+
+/**
+ * True if a `digitalSourceType` value denotes AI involvement (bare code or URI).
+ * Matching is by term inclusion on the lowercased string, NOT exact equality, so
+ * both the bare code (`trainedAlgorithmicMedia`) and the full IPTC URI
+ * (`http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia`)
+ * resolve, and a future longer URI carrying the same terminal term still does.
+ * Fails closed to `false` on non-strings. Pure.
+ */
+export function isAISourceType(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const v = value.toLowerCase();
+  return AI_SOURCE_TYPE_TERMS.some((term) => v.includes(term));
+}
+
+/**
+ * True if a single `c2pa.actions[]` entry declares an AI-generated/edit step via
+ * its `digitalSourceType` (the standard `actions[].digitalSourceType` field).
+ * Pure; accepts `unknown` and fails closed to `false` on non-objects.
+ */
+export function isAIAction(action: unknown): boolean {
+  if (typeof action !== 'object' || action === null) return false;
+  const dsType = (action as { digitalSourceType?: unknown }).digitalSourceType;
+  return isAISourceType(dsType);
+}
+
+/**
+ * True if an assertion represents a declared AI involvement. Pure. Sources:
+ *   1. a `c2pa.ai.*` assertion label;
+ *   2. an assertion-level `digitalSourceType`;
+ *   3. a `c2pa.actions[].digitalSourceType` (and the `.vN` family).
+ */
+export function isAIAssertion(assertion: C2PAAssertionView): boolean {
+  if (assertion.label.startsWith('c2pa.ai')) {
+    return true;
+  }
+  const data = assertion.data as { digitalSourceType?: unknown; actions?: unknown } | undefined;
+  if (isAISourceType(data?.digitalSourceType)) return true;
+  if (Array.isArray(data?.actions)) {
+    return (data.actions as readonly unknown[]).some(isAIAction);
+  }
+  return false;
+}
 
 /**
  * Classification of a `validation_status` code into the evidence prong it
@@ -90,15 +133,6 @@ function bucketCodes(codes: readonly C2PAValidationStatusView[]): CodeBucket {
     }
   }
   return { hashMismatch, signatureFailure, unknown };
-}
-
-/** True if an assertion represents a declared AI involvement. Pure. */
-export function isAIAssertion(assertion: C2PAAssertionView): boolean {
-  if (assertion.label.startsWith('c2pa.ai')) {
-    return true;
-  }
-  const data = assertion.data as { digitalSourceType?: unknown } | undefined;
-  return typeof data?.digitalSourceType === 'string' && AI_SOURCE_TYPES.has(data.digitalSourceType);
 }
 
 /** Extract a human-facing generator name from an AI assertion's data, if any. */

@@ -63,6 +63,56 @@ describe('cacheKeyFor', () => {
       cacheKeyFor(mkPage({ pageUrl: 'https://example.com/y' })),
     );
   });
+
+  it('changes when pageTitle changes (SPA title swap)', () => {
+    expect(cacheKeyFor(mkPage({ pageTitle: 'Before' }))).not.toBe(
+      cacheKeyFor(mkPage({ pageTitle: 'After' })),
+    );
+  });
+
+  it('changes when the heading set changes', () => {
+    expect(cacheKeyFor(mkPage({ headings: ['H'] }))).not.toBe(
+      cacheKeyFor(mkPage({ headings: ['H', 'H2'] })),
+    );
+  });
+
+  it('changes when a claim text changes (SPA claim update)', () => {
+    expect(
+      cacheKeyFor(
+        mkPage({ claims: [{ id: 'c1', text: 'claim A', type: 'numeric', importance: 0.5 }] }),
+      ),
+    ).not.toBe(
+      cacheKeyFor(
+        mkPage({ claims: [{ id: 'c1', text: 'claim B', type: 'numeric', importance: 0.5 }] }),
+      ),
+    );
+  });
+
+  it('changes when an asset nearbyText changes', () => {
+    const a = mkPage({
+      assets: [
+        {
+          assetId: 'a1',
+          width: 800,
+          height: 600,
+          nearbyText: 'caption one',
+          pageUrl: 'https://example.com/a',
+        },
+      ],
+    });
+    const b = mkPage({
+      assets: [
+        {
+          assetId: 'a1',
+          width: 800,
+          height: 600,
+          nearbyText: 'caption two',
+          pageUrl: 'https://example.com/a',
+        },
+      ],
+    });
+    expect(cacheKeyFor(a)).not.toBe(cacheKeyFor(b));
+  });
 });
 
 describe('SemanticCache — get/set + TTL', () => {

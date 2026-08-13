@@ -58,16 +58,64 @@ The inviolable split: the deterministic Trust Decision Engine is the **sole
 authority** for `Verified / Verified AI / Provenance Broken / Unknown`. A soft
 or AI signal can **never** promote content to Verified, nor demote
 cryptographically-verified content to Broken (§51 — pinned by
-`ai-powerlessness.test.ts`). The Intelligence Layer is OFF by default; enable it
+`ai-powerlessness.test.ts`), and can **never** hide a cryptographically detected
+`Provenance Broken` verdict (§17 — pinned by `display.test.ts` and the final
+display policy `decideFinalDisplay`, which always surfaces `broken` at `critical`
+priority). The Intelligence Layer is OFF by default; enable it
 on the extension's Options page (no API key required for the local heuristics,
 which always run first and fall back on any AI failure).
+
+## AI Provider (optional, pluggable — no keys in source)
+
+The AI provider is an **optional enhancement**, not a runtime dependency. The
+zero-config core pipeline (scan → verify → trust badge) works with no AI at all
+— the local heuristic classifier always runs first, and every AI failure falls
+back to it.
+
+- **Pluggable.** `IntelligenceProvider` is a one-method interface. The repo ships
+  an OpenAI-compatible implementation (`/v1/chat/completions`) and a no-network
+  mock for demos. Point it at OpenAI, Azure OpenAI, or any local compat shim.
+- **No commercial API key is hardcoded anywhere in source.** The key lives only
+  in `chrome.storage.local` (set on the Options page) and transits directly to
+  the provider's `Authorization` header — never logged, never sent to the content
+  script, never committed (see `apps/extension/src/background/intelligence.ts`).
+- **Config-safe caching.** A provider change (including an API-key rotation)
+  rebuilds the classifier; the cache never serves a stale key's client.
+- **Privacy default.** `context-only`: only text context is sent; image bytes and
+  URLs are never uploaded (§7).
+
+## Capability matrix
+
+What is proven, and how, on this commit (all commands re-runnable):
+
+| Capability | Evidence | Command |
+| --- | --- | --- |
+| 4 trust states correct | 386/386 cases vs an independent spec oracle | `pnpm benchmark` |
+| AI cannot change the verdict | 4 §51 invariants (soft "verified"/"fake" fail-closed) | `pnpm test -- ai-powerlessness` |
+| AI cannot hide `broken` | 15 §17 invariants (suppression overridden at `critical`) | `pnpm test -- display` |
+| C2PA AI-standard compat | `c2pa.actions[].digitalSourceType` (URI + short) → `verified-ai` | `pnpm test -- mapper integration` |
+| Whole suite | 278 tests / 21 files, typecheck + lint + format clean | `pnpm verify` |
+| Real-browser end-to-end | 4 states + tamper→Broken + detail opens | `node apps/extension/scripts/smoke.mjs` |
+| In-browser report self-check | 4 cards, ALL PASS | `node apps/extension/scripts/report-check.mjs` |
+| No secrets in source | no `.env`, no private keys, no hardcoded API key | secret audit (below) |
+
+## Source submission notice
+
+This repository is a self-contained source submission. It contains **no
+hardcoded commercial API keys and no private keys**. The only PEM files are
+`trust-anchor.pem` public **certificates** (c2pa-node's *test* signer, required
+so the committed demo fixtures verify as Trusted — the sanctioned `userAnchors`
+mechanism, with `verifyTrust: true` never weakened). To run the AI layer you
+bring your own key on the Options page; to build a real trust list you supply
+your own anchors. Regenerating the signed fixtures requires network access to a
+timestamp authority (`pnpm gen:fixtures`).
 
 ## Work with this repo
 
 ```bash
 pnpm install
-pnpm verify        # typecheck + test + lint + format:check (235 tests)
-pnpm test          # vitest run (235 tests)
+pnpm verify        # typecheck + test + lint + format:check (278 tests)
+pnpm test          # vitest run (278 tests)
 pnpm benchmark     # decision-engine benchmark: 386 cases vs the spec oracle
 pnpm gen:fixtures  # regenerate the signed PNGs (needs network for the TSA)
 

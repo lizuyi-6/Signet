@@ -79,8 +79,11 @@ no API key needed — the local heuristics run first, and AI is optional).
 - **The inviolable rule.** Everything in CONTEXT is advisory. It can **never**
   change the verdict above it: an AI or heuristic signal cannot promote to
   Verified nor demote a Verified asset to Broken (§51 — proven by
-  `ai-powerlessness.test.ts`). AI understands; crypto proves; the rule engine
-  decides; Signet displays.
+  `ai-powerlessness.test.ts`), and it can **never** suppress a `Provenance
+  Broken` badge — a crypto failure always shows at `critical`, even if the
+  semantic layer classified the asset as a logo or decoration (§17 — proven by
+  `display.test.ts`). AI understands; crypto proves; the rule engine decides;
+  Signet displays.
 
 Run the whole pipeline in a browser (no extension, no key, no network) at
 `http://127.0.0.1:5173/report.html`, or headlessly:
@@ -103,9 +106,9 @@ node apps/extension/scripts/report-check.mjs   # needs pnpm dev running
 
 ## 6. Credibility evidence (for the sceptical reviewer)
 
-- `pnpm test` — 235 unit tests (engine, mapper, normalizer, intelligence layer,
-  fixtures, benchmark, the 4 §51 AI-powerlessness invariants, the 57-case
-  semantic eval set).
+- `pnpm test` — 278 unit tests (engine, mapper, normalizer, intelligence layer,
+  fixtures, benchmark, the 4 §51 AI-powerlessness invariants, the 15 §17
+  trust-visibility invariants, the 57-case semantic eval set).
 - `pnpm benchmark` — 386 classification cases checked against an **independent
   specification oracle** (not a self-comparison); 386/386 pass.
 - `node apps/extension/scripts/smoke.mjs` — real-Chromium end-to-end: 4 states

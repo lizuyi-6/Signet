@@ -60,6 +60,87 @@ describe('decide(mapManifestStore(...)) — the four trust states', () => {
     expect(d.ruleId).toBe('R4-verified');
   });
 
+  it('c2pa.actions[].digitalSourceType (URI form) → verified-ai', () => {
+    const store: C2PAManifestStoreView = {
+      active_manifest: {
+        claim_generator: 'Signet/0.1',
+        signature_info: SIG,
+        assertions: [
+          {
+            label: 'c2pa.actions',
+            data: {
+              actions: [
+                {
+                  action: 'c2pa.created',
+                  digitalSourceType:
+                    'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+                },
+              ],
+            },
+          },
+        ],
+      },
+      validation_status: [],
+    };
+    const d = decide(mapManifestStore(store, 'a1'));
+    expect(d.state).toBe('verified-ai');
+    expect(d.reason).toBe('ai-declared-and-valid');
+  });
+
+  it('c2pa.actions.v2[].digitalSourceType (short form) → verified-ai', () => {
+    const store: C2PAManifestStoreView = {
+      active_manifest: {
+        claim_generator: 'Signet/0.1',
+        signature_info: SIG,
+        assertions: [
+          {
+            label: 'c2pa.actions.v2',
+            data: {
+              actions: [{ action: 'c2pa.created', digitalSourceType: 'trainedAlgorithmicMedia' }],
+            },
+          },
+        ],
+      },
+      validation_status: [],
+    };
+    const d = decide(mapManifestStore(store, 'a1'));
+    expect(d.state).toBe('verified-ai');
+  });
+
+  it('AI declaration + integrity mismatch → broken (never verified-ai)', () => {
+    // An asset that declares AI generation but fails its hash binding is broken,
+    // not "verified" and not "verified-ai": a cryptographic failure dominates.
+    const store: C2PAManifestStoreView = {
+      active_manifest: {
+        claim_generator: 'Signet/0.1',
+        signature_info: SIG,
+        assertions: [
+          {
+            label: 'c2pa.actions',
+            data: {
+              actions: [
+                {
+                  action: 'c2pa.created',
+                  digitalSourceType:
+                    'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+                },
+              ],
+            },
+          },
+        ],
+      },
+      validation_status: [
+        {
+          code: 'assertion.dataHash.mismatch',
+          explanation: 'asset hash error, error: hash verification( Hashes do not match )',
+        },
+      ],
+    };
+    const d = decide(mapManifestStore(store, 'a1'));
+    expect(d.state).toBe('broken');
+    expect(d.reason).toBe('integrity-mismatch');
+  });
+
   it('assertion.dataHash.mismatch (tamper) → broken / integrity-mismatch', () => {
     const store: C2PAManifestStoreView = {
       active_manifest: { claim_generator: 'Signet/0.1', signature_info: SIG, assertions: [] },

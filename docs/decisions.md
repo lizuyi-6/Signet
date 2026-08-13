@@ -1029,5 +1029,127 @@ package changed — Phase I adds only `ai-powerlessness.test.ts`,
 trust engine, hard/soft seam, and badge trust rendering remain byte-identical
 to Phase H.
 
+---
+
+## D27 — Phase J (Competition Release): trust-visibility invariant, C2PA AI-standard compat, config/fingerprint/trust-profile hardening
+
+**Context.** The competition release is a *hardening* pass, not a feature pass:
+make existing behavior safe, standards-compliant, explainable, reproducible, and
+submittable. Priority order (PRD): **Trust Safety > Source-code Security >
+Reproducibility > Demo Stability > Standards Compatibility > Privacy > AI
+Capability > UI Polish > Architecture Elegance.** No commercial API key may live
+in source; the AI provider is a pluggable, optional enhancement, and the
+zero-config core pipeline runs with no AI at all.
+
+### J1 — Final Display Policy + the Trust Visibility Invariant (§17)
+
+**Problem.** In the intelligence path, `processIntelligence`/`applyAnalyzeResult`
+gated `verify()` and overlay mounting on `badgePolicy.shouldShow(...)`. A
+semantic classification of "logo / decoration / low-importance" could therefore
+*remove the overlay before* (or after) verification — meaning a cryptographically
+detected `Broken` verdict could be hidden by the advisory layer. That violates
+the two halves of the AI-powerlessness contract: AI must not **change** a verdict
+(§51) and must not **hide** one (§17).
+
+**Fix.** Decouple verification from semantic visibility and add a single last
+gate before display:
+
+- `packages/intelligence/src/display.ts` (new) — `decideFinalDisplay(trust,
+  semantic)` + `FinalDisplayDecision { show, priority, reason }` +
+  `TRUST_VISIBILITY_INVARIANT`. Rule: `trust.state === 'broken'` → always show at
+  `critical`, regardless of the semantic `BadgeDecision`; otherwise the semantic
+  decision is authoritative. It reads only `trust.state` (a `TrustView`), so it
+  cannot promote or demote the verdict itself.
+- `apps/extension/src/content/index.ts` — `reconcileDisplay(url)` is now the only
+  mount/suppress path; verification is triggered unconditionally for every
+  eligible asset (`void verify(url)` before `reconcileDisplay`). A `broken`
+  verdict therefore always mounts its badge, even if semantics would suppress it.
+
+**Pinned by** `display.test.ts` (15 tests): decoration+broken, logo+broken,
+heuristic-suppress+broken, and AI-role-changes-after-verify+broken all show at
+`critical`; non-broken states defer to semantics. This is the display-side
+companion to `ai-powerlessness.test.ts` (§51: AI cannot change the verdict; §17:
+AI cannot hide it).
+
+### J2 — C2PA AI standard compatibility: `c2pa.actions[].digitalSourceType`
+
+**Problem.** `isAIAssertion` only recognised `c2pa.ai.*` labels and an exact
+match on `digitalSourceType` against a short set. The C2PA/IPTC standard signals
+AI generation via `actions[].digitalSourceType` carrying either the bare code
+(`trainedAlgorithmicMedia`) or the full IPTC URI
+(`http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia`).
+
+**Fix.** `packages/evidence/src/mapper.ts`:
+- `isAISourceType(value)` — term-inclusion on the lowercased string
+  (`trainedalgorithmicmedia` / `compositewithtrainedalgorithmicmedia`), so both
+  the bare code and any longer URI carrying the same terminal term resolve;
+  fails closed to `false` on non-strings.
+- `isAIAction(action)` — reads a single `actions[]` entry's `digitalSourceType`.
+- `isAIAssertion` now also returns true for a `c2pa.actions`/`.vN` assertion
+  whose actions contain an AI `digitalSourceType`.
+
+**Pinned by** `mapper.test.ts` (+5) and `integration.test.ts` (+2):
+`c2pa.actions` URI → `verified-ai`, `c2pa.actions.v2` short form → `verified-ai`,
+`digitalCapture` → not-AI, and **AI declaration + `assertion.dataHash.mismatch`
+→ `broken`** (a crypto failure dominates an AI declaration; never `verified-ai`).
+
+### J3 — Provider config cache includes the API key
+
+**Problem.** `classifierFor(config)` compared `enabled/provider/endpoint/model/
+timeoutMs/privacyMode` but NOT `apiKey`. An API-key rotation (same endpoint and
+model) returned the cached provider — which still held the old key's client.
+
+**Fix.** `apps/extension/src/background/intelligence.ts` now also compares
+`prev.config.apiKey === config.apiKey`, so a key change rebuilds the provider
+(and drops the result cache). The key still never appears in source or logs.
+
+**Pinned by** `apps/extension/src/background/intelligence.test.ts` (7 tests):
+same config → same classifier; apiKey-only change → rebuilt; provider/endpoint
+change → rebuilt; incomplete creds → `providerFor` returns `null` (fail-closed).
+
+### J4 — Analyze fingerprint covers full page content
+
+**Problem.** The content script's analyze dedup fingerprint hashed only the asset
+URL set + count. An SPA content change (title, heading, claim, or an asset's
+alt/nearby text) with an unchanged image set was silently deduped, leaving the AI
+layer serving stale analysis.
+
+**Fix.** `apps/extension/src/content/index.ts` builds the full `PageSemanticInput`
+first and uses `cacheKeyFor(input)` (from `@signet/intelligence`) as the
+fingerprint — covering `pageUrl`, `pageTitle`, `headings`, `claims`, and each
+asset's `altText`/`nearbyText`/dimensions (never image bytes or URLs).
+
+**Pinned by** `cache.test.ts` (+4): key changes on pageTitle/headings/claims/
+nearbyText change (in addition to the existing pageUrl/altText coverage).
+
+### J5 — Reproducibility: portable paths + demo/default trust profile
+
+**Problem.** `apps/extension/scripts/report-check.mjs` wrote a screenshot to the
+machine-specific `X:/BOE/apps/demo/report-smoke.png`.
+
+**Fix.** The path is now resolved from `import.meta.url`
+(`<repo>/apps/demo/report-smoke.png`). Additionally, the demo's trust anchor is
+now an explicit **TrustProfile**:
+
+- `packages/evidence-web/src/reader.ts` — `TrustProfile = 'default' | 'demo'` +
+  `resolveTrustProfile(opts)`. Both profiles keep `verifyTrust: true` (the
+  requires-proof gate is **never** weakened, rule 3.3); they differ only in which
+  anchors are added. A `demo` profile without its anchor **throws** (fail-closed)
+  rather than silently validating fixtures as `untrusted`.
+- `apps/extension/src/offscreen/index.ts` resolves `profile:'demo'` once at
+  module load from the committed test-signer PEM; a real build switches to
+  `'default'` (the SDK's built-in trust list).
+
+**Pinned by** `packages/evidence-web/src/reader.test.ts` (4 tests): default has
+no anchor + `verifyTrust:true`; demo carries the anchor + `verifyTrust:true`;
+demo-without-anchor throws; neither profile returns `verifyTrust:false`.
+
+**What this phase does NOT change (safety).** The trust engine, the hard/soft
+seam, and the offscreen verify channel are untouched; `verifyTrust` remains
+`true` everywhere (`reader.ts:93` defaults it to `true`, `offscreen/index.ts`
+passes `verifyTrust: true`). The `broken`-overrides-suppression invariant is the
+*only* behavior change, and it is toward **visibility of failure**, never toward
+a false green.
+
 
 

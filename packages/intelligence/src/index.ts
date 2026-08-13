@@ -16,6 +16,7 @@ export * from './claims.js';
 export * from './mapping.js';
 export * from './explain.js';
 export * from './policy.js';
+export * from './display.js';
 export * from './cache.js';
 export * from './prompts/semantic-v1.js';
 export * from './prompts/explain-v1.js';

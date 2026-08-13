@@ -65,8 +65,11 @@ function build(config: IntelligenceConfig): ClassifierHandle {
 
 /**
  * Get the classifier for `config`, rebuilding only when the config meaningfully
- * changed (enabled / provider / endpoint / model / timeout). The cache is
- * dropped on rebuild — a provider/model change invalidates prior results.
+ * changed. Every behavior-changing field is compared — `enabled`, `provider`,
+ * `endpoint`, `apiKey`, `model`, `timeoutMs`, `privacyMode` — so an API-key
+ * rotation (same endpoint/model) rebuilds the provider instead of silently
+ * reusing the old key's client. The cache is dropped on rebuild — a
+ * provider/model/key change invalidates prior results.
  */
 export function classifierFor(config: IntelligenceConfig): HybridSemanticClassifier {
   const prev = handle;
@@ -75,6 +78,7 @@ export function classifierFor(config: IntelligenceConfig): HybridSemanticClassif
     prev.config.enabled === config.enabled &&
     prev.config.provider === config.provider &&
     prev.config.endpoint === config.endpoint &&
+    prev.config.apiKey === config.apiKey &&
     prev.config.model === config.model &&
     prev.config.timeoutMs === config.timeoutMs &&
     prev.config.privacyMode === config.privacyMode

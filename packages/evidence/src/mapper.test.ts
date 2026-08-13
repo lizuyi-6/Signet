@@ -13,7 +13,9 @@ import { describe, expect, it, beforeEach } from 'vitest';
 
 import {
   classifyValidationCode,
+  isAIAction,
   isAIAssertion,
+  isAISourceType,
   mapManifestStore,
   _resetIdCounterForTests,
 } from './mapper.js';
@@ -58,6 +60,51 @@ describe('classifyValidationCode', () => {
   });
 });
 
+describe('isAISourceType', () => {
+  it('accepts the bare code and the full IPTC URI form (term inclusion)', () => {
+    expect(isAISourceType('trainedAlgorithmicMedia')).toBe(true);
+    expect(isAISourceType('compositeWithTrainedAlgorithmicMedia')).toBe(true);
+    expect(
+      isAISourceType('http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia'),
+    ).toBe(true);
+    expect(
+      isAISourceType(
+        'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a plain algorithmic/digital capture and non-strings (fail-closed)', () => {
+    expect(isAISourceType('digitalCapture')).toBe(false);
+    expect(isAISourceType('algorithmicMedia')).toBe(false);
+    expect(isAISourceType('compositeSynthetic')).toBe(false);
+    expect(isAISourceType(undefined)).toBe(false);
+    expect(isAISourceType(null)).toBe(false);
+    expect(isAISourceType(42)).toBe(false);
+  });
+});
+
+describe('isAIAction', () => {
+  it('detects an action whose digitalSourceType is AI (short or URI)', () => {
+    expect(
+      isAIAction({ action: 'c2pa.created', digitalSourceType: 'trainedAlgorithmicMedia' }),
+    ).toBe(true);
+    expect(
+      isAIAction({
+        action: 'c2pa.created',
+        digitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a non-AI action, a missing digitalSourceType, and non-objects', () => {
+    expect(isAIAction({ action: 'c2pa.created', digitalSourceType: 'digitalCapture' })).toBe(false);
+    expect(isAIAction({ action: 'c2pa.created' })).toBe(false);
+    expect(isAIAction(null)).toBe(false);
+    expect(isAIAction('trainedAlgorithmicMedia')).toBe(false);
+  });
+});
+
 describe('isAIAssertion', () => {
   it('detects assertions whose label is in the c2pa.ai namespace', () => {
     expect(isAIAssertion({ label: 'c2pa.ai.gen', data: {} })).toBe(true);
@@ -80,6 +127,43 @@ describe('isAIAssertion', () => {
     // A plain digital capture is NOT an AI declaration.
     expect(
       isAIAssertion({ label: 'stds.source', data: { digitalSourceType: 'digitalCapture' } }),
+    ).toBe(false);
+  });
+
+  it('detects an AI-declared action inside a c2pa.actions assertion (URI form)', () => {
+    expect(
+      isAIAssertion({
+        label: 'c2pa.actions',
+        data: {
+          actions: [
+            {
+              action: 'c2pa.created',
+              digitalSourceType:
+                'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects an AI-declared action inside the versioned c2pa.actions.v2 assertion', () => {
+    expect(
+      isAIAssertion({
+        label: 'c2pa.actions.v2',
+        data: {
+          actions: [{ action: 'c2pa.created', digitalSourceType: 'trainedAlgorithmicMedia' }],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a c2pa.actions assertion whose actions are all non-AI', () => {
+    expect(
+      isAIAssertion({
+        label: 'c2pa.actions',
+        data: { actions: [{ action: 'c2pa.created', digitalSourceType: 'digitalCapture' }] },
+      }),
     ).toBe(false);
   });
 });
@@ -132,6 +216,67 @@ describe('mapManifestStore', () => {
     const ai = g.items.filter((i) => i.type === 'ai-label');
     expect(ai).toHaveLength(1);
     expect(ai[0]?.status).toBe('valid');
+  });
+
+  it('emits a valid ai-label from a c2pa.actions[].digitalSourceType (URI form)', () => {
+    const g = mapManifestStore(
+      cleanStore({
+        assertions: [
+          {
+            label: 'c2pa.actions',
+            data: {
+              actions: [
+                {
+                  action: 'c2pa.created',
+                  digitalSourceType:
+                    'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia',
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      'a1',
+    );
+    const ai = g.items.filter((i) => i.type === 'ai-label');
+    expect(ai).toHaveLength(1);
+    expect(ai[0]?.status).toBe('valid');
+  });
+
+  it('emits a valid ai-label from a c2pa.actions.v2[].digitalSourceType (short form)', () => {
+    const g = mapManifestStore(
+      cleanStore({
+        assertions: [
+          {
+            label: 'c2pa.actions.v2',
+            data: {
+              actions: [{ action: 'c2pa.created', digitalSourceType: 'trainedAlgorithmicMedia' }],
+            },
+          },
+        ],
+      }),
+      'a1',
+    );
+    const ai = g.items.filter((i) => i.type === 'ai-label');
+    expect(ai).toHaveLength(1);
+    expect(ai[0]?.status).toBe('valid');
+  });
+
+  it('does NOT emit an ai-label when the only action is a non-AI capture', () => {
+    const g = mapManifestStore(
+      cleanStore({
+        assertions: [
+          {
+            label: 'c2pa.actions',
+            data: {
+              actions: [{ action: 'c2pa.captured', digitalSourceType: 'digitalCapture' }],
+            },
+          },
+        ],
+      }),
+      'a1',
+    );
+    expect(g.items.filter((i) => i.type === 'ai-label')).toHaveLength(0);
   });
 
   it('marks hash invalid on assertion.dataHash.mismatch while leaving signature valid', () => {

@@ -47,6 +47,42 @@ export interface WebReaderOptions {
   readonly verifyTrust?: boolean;
 }
 
+/**
+ * A named trust configuration. Both profiles keep `verifyTrust: true` — the
+ * requires-proof gate is never weakened (CLAUDE.md rule 3.3); they differ only
+ * in WHICH trust anchors are added:
+ *  - `default`: the SDK's built-in trust list (real-world assets; no demo anchor).
+ *  - `demo`: adds the committed test-signer anchor so the committed demo
+ *    fixtures verify as Trusted.
+ */
+export type TrustProfile = 'default' | 'demo';
+
+export interface TrustProfileOptions {
+  readonly profile: TrustProfile;
+  /** Required when `profile === 'demo'`: the test-signer PEM text. */
+  readonly demoAnchorPem?: string;
+}
+
+/**
+ * Resolve a {@link TrustProfile} to the concrete trust fields for
+ * {@link WebReaderOptions}. `verifyTrust` is always `true`. Fails closed: a
+ * `demo` profile without its anchor throws rather than silently validating the
+ * fixtures as `untrusted` (a missing anchor must be a loud build-time error,
+ * not a quiet runtime mis-verification).
+ */
+export function resolveTrustProfile(opts: TrustProfileOptions): {
+  readonly trustAnchorPem?: string;
+  readonly verifyTrust: true;
+} {
+  if (opts.profile === 'demo') {
+    if (typeof opts.demoAnchorPem !== 'string' || opts.demoAnchorPem.length === 0) {
+      throw new Error('resolveTrustProfile: demo profile requires demoAnchorPem');
+    }
+    return { trustAnchorPem: opts.demoAnchorPem, verifyTrust: true };
+  }
+  return { verifyTrust: true };
+}
+
 interface C2paWebModule {
   createC2pa: (opts: unknown) => Promise<C2paInstance>;
 }
